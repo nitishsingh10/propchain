@@ -1,7 +1,7 @@
 /**
  * PropChain — API Client
  */
-const BASE = ''
+const BASE = import.meta.env.VITE_API_URL || ''
 
 async function request(path, options = {}) {
     const res = await fetch(`${BASE}${path}`, {
@@ -20,6 +20,16 @@ export const api = {
     listProperties: (params) => request(`/properties/?${new URLSearchParams(params)}`),
     getProperty: (id) => request(`/properties/${id}`),
     submitProperty: (data) => request('/properties/submit', { method: 'POST', body: JSON.stringify(data) }),
+    verifyProperty: async (propertyId, files) => {
+        const formData = new FormData()
+        files.forEach(f => formData.append('files', f))
+        const res = await fetch(`${BASE}/properties/${propertyId}/verify`, { method: 'POST', body: formData })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }))
+            throw new Error(err.detail || err.error || 'API Error')
+        }
+        return res.json()
+    },
     activateProperty: (id, data) => request(`/properties/${id}/activate`, { method: 'POST', body: JSON.stringify(data) }),
 
     // Investments

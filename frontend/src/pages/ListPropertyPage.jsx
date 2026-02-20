@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { WalletContext } from '../App'
 import { useToast } from '../components/Toast'
 import { LocationPickerMap, AddressAutocomplete } from '../components/PropertyMap'
+import { api } from '../utils/api'
 import { Upload, DollarSign, Building, MapPin, PieChart, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react'
 
 export default function ListPropertyPage() {
@@ -56,7 +57,7 @@ export default function ListPropertyPage() {
             const payload = {
                 owner_address: walletAddress,
                 property_name: formData.propertyName,
-                location_hash: formData.location, // In real app, this would be a hash or detailed address
+                location_hash: formData.location,
                 valuation: parseInt(formData.valuation),
                 total_shares: parseInt(formData.totalShares),
                 share_price: sharePrice,
@@ -64,15 +65,7 @@ export default function ListPropertyPage() {
                 max_investment: parseInt(formData.maxInvestment)
             }
 
-            const response = await fetch('/api/properties/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-
-            const data = await response.json()
-
-            if (!response.ok) throw new Error(data.detail || 'Failed to submit property')
+            const data = await api.submitProperty(payload)
 
             setPropertyId(data.property_id)
             setStep(2)
@@ -93,19 +86,7 @@ export default function ListPropertyPage() {
 
         setIsLoading(true)
         try {
-            const uploadData = new FormData()
-            files.forEach(file => {
-                uploadData.append('files', file)
-            })
-
-            const response = await fetch(`/api/properties/${propertyId}/verify`, {
-                method: 'POST',
-                body: uploadData
-            })
-
-            const data = await response.json()
-
-            if (!response.ok) throw new Error(data.detail || 'Failed to upload documents')
+            await api.verifyProperty(propertyId, files)
 
             setStep(3)
             toast.success('Documents uploaded and verification started')
