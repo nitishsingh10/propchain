@@ -1,0 +1,43 @@
+[algokit]
+min_version = "v2.0.0"
+
+[project]
+type = "contract"
+name = "propchain"
+artifacts = "contracts/artifacts"
+
+[project.run]
+build = { commands = ["algokit compile py contracts/"] }
+deploy = { commands = ["python deploy.py"] }
+
+[generate.smart_contract]
+description = "Puya smart contracts for PropChain"
+path = "contracts/"
+
+[network.localnet]
+algod_url = "http://localhost:4001"
+algod_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+indexer_url = "http://localhost:8980"
+
+[network.testnet]
+algod_url = "https://testnet-api.algonode.cloud"
+algod_token = ""
+indexer_url = "https://testnet-idx.algonode.cloud"
+
+# Pre-funded test accounts for LocalNet development
+[localnet.accounts]
+oracle_account = { funding_amount = 100_000_000 }
+owner_account = { funding_amount = 100_000_000 }
+investor_1 = { funding_amount = 50_000_000 }
+investor_2 = { funding_amount = 50_000_000 }
+investor_3 = { funding_amount = 50_000_000 }
+investor_4 = { funding_amount = 50_000_000 }
+
+# Deployment order: SPVRegistry → PropertyRegistry → FractionalToken → RentDistributor → GovernanceVoting → SettlementEngine
+[deploy]
+command = "python deploy.py"
+environment_secrets = [
+    "ORACLE_MNEMONIC",
+    "ALGOD_TOKEN",
+    "ALGOD_SERVER",
+]
