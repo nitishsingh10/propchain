@@ -9,7 +9,7 @@ import { SinglePropertyMap } from '../components/PropertyMap'
 export default function PropertyDetailPage() {
     const { id } = useParams()
     const { walletAddress } = useContext(WalletContext)
-    const { properties, invest } = useDemoStore()
+    const { properties, buyShares } = useDemoStore()
     const toast = useToast()
 
     const p = properties.find(prop => prop.id === Number(id))
@@ -39,13 +39,18 @@ export default function PropertyDetailPage() {
 
     const handleBuy = async () => {
         setTxnState('signing')
+        try {
+            // Simulate transaction processing
+            await new Promise(r => setTimeout(r, 2000))
 
-        // Simulate transaction processing
-        await new Promise(r => setTimeout(r, 2000))
-
-        invest(p.id, totalCost)
-        setTxnState('success')
-        toast.success(`Successfully purchased ${qty} shares of ${p.name}!`, 'Transaction Confirmed')
+            buyShares(p.id, qty)
+            setTxnState('success')
+            toast.success(`Successfully purchased ${qty} shares of ${p.name}!`, 'Transaction Confirmed')
+        } catch (error) {
+            console.error('Transaction error:', error)
+            toast.error(error.message || 'Transaction failed')
+            setTxnState('idle')
+        }
     }
 
     const resetModal = () => {

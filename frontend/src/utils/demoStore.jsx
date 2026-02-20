@@ -50,6 +50,41 @@ export function DemoProvider({ children }) {
         return true
     }
 
+    // Buy shares of a property (by quantity)
+    const buyShares = (propertyId, qty) => {
+        const property = properties.find(p => p.id === Number(propertyId))
+        if (!property || qty <= 0) return false
+
+        // Update holdings
+        setHoldings(prev => {
+            const existing = prev.find(h => h.propertyId === property.id)
+            if (existing) {
+                return prev.map(h => h.propertyId === property.id
+                    ? { ...h, shares: h.shares + qty }
+                    : h)
+            } else {
+                return [...prev, {
+                    propertyId: property.id,
+                    name: property.name,
+                    shares: qty,
+                    totalShares: property.totalShares,
+                    sharePrice: property.sharePrice,
+                    yield: property.yield,
+                    claimableRent: 0,
+                    totalClaimed: 0,
+                    status: 'ACTIVE'
+                }]
+            }
+        })
+
+        // Update property stats
+        setProperties(prev => prev.map(p => p.id === Number(propertyId)
+            ? { ...p, sharesSold: Math.min(p.sharesSold + qty, p.totalShares) }
+            : p))
+
+        return true
+    }
+
     // List a new property
     const listProperty = (newProp) => {
         const id = properties.length + 1
@@ -96,6 +131,7 @@ export function DemoProvider({ children }) {
             proposals,
             balance,
             invest,
+            buyShares,
             listProperty,
             claimRent,
             getListedProperties,
