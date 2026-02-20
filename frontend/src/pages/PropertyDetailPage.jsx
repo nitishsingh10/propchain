@@ -9,7 +9,7 @@ import { SinglePropertyMap } from '../components/PropertyMap'
 export default function PropertyDetailPage() {
     const { id } = useParams()
     const { walletAddress } = useContext(WalletContext)
-    const { properties, buyShares } = useDemoStore()
+    const { properties, invest } = useDemoStore()
     const toast = useToast()
 
     const p = properties.find(prop => prop.id === Number(id))
@@ -43,7 +43,7 @@ export default function PropertyDetailPage() {
         // Simulate transaction processing
         await new Promise(r => setTimeout(r, 2000))
 
-        buyShares(p.id, qty)
+        invest(p.id, totalCost)
         setTxnState('success')
         toast.success(`Successfully purchased ${qty} shares of ${p.name}!`, 'Transaction Confirmed')
     }
