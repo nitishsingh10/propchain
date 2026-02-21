@@ -29,6 +29,17 @@ async def claim_rent(req: RentClaimRequest):
     Investor claims available rent for a property.
     Returns unsigned transaction for investor to sign.
     """
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT claimable_rent FROM holdings WHERE property_id=? AND investor_address=?", (req.property_id, req.investor_address))
+    row = c.fetchone()
+    conn.close()
+    
+    claimable = row["claimable_rent"] if row else 0
+    if claimable == 0:
+        raise HTTPException(400, "No rent available to claim")
+        
     logger.info(f"Rent claim: {req.investor_address} for property {req.property_id}")
     
     unsigned_txns = []
@@ -51,18 +62,37 @@ async def claim_rent(req: RentClaimRequest):
                 amt=0,
                 note=f"PropChain: Claim Rent for Prop {req.property_id}".encode()
             )
-            encoded = base64.b64encode(encoding.msgpack_encode(txn)).decode("utf-8")
+            encoded = encoding.msgpack_encode(txn)
             unsigned_txns.append(encoded)
         except Exception as e:
             logger.error(f"Failed to build txn: {e}")
+            error_msg = str(e)
+    else:
+        error_msg = "Algod client not initialized"
 
     return {
         "property_id": req.property_id,
         "investor_address": req.investor_address,
-        "claimable": 0,
+        "claimable": claimable,
         "message": "Sign transaction to claim rent",
-        "unsigned_txns": unsigned_txns
+        "unsigned_txns": unsigned_txns,
+        "error": error_msg
     }
+
+@router.post("/record_claim")
+async def record_claim(req: RentClaimRequest):
+    """Internal use: record a successful rent claim."""
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE holdings 
+        SET total_claimed = total_claimed + claimable_rent, claimable_rent = 0 
+        WHERE property_id=? AND investor_address=?
+    ''', (req.property_id, req.investor_address))
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 
 @router.get("/stats/{property_id}", response_model=RentStatsResponse)

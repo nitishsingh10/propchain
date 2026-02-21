@@ -143,10 +143,10 @@ async def submit_transaction(req: Request):
     class SubmitReq(BaseModel):
         signed_txn: str
     data = await req.json()
-    import base64
     try:
         if app_state["algod_client"]:
-            txid = app_state["algod_client"].send_raw_transaction(base64.b64decode(data["signed_txn"]))
+            # send_raw_transaction expects a base64 string natively and decodes it internally
+            txid = app_state["algod_client"].send_raw_transaction(data["signed_txn"])
             return {"success": True, "txid": txid, "message": "Transaction submitted to Algorand"}
     except Exception as e:
         return {"success": False, "error": str(e)}

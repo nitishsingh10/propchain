@@ -16,17 +16,36 @@ logger = logging.getLogger("propchain.routes.governance")
 async def create_proposal(req: ProposalCreateRequest):
     """
     Create a governance proposal for a property.
-    Only shareholders can create proposals.
     """
     logger.info(f"Proposal for property {req.property_id}: type={req.proposal_type}")
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get total shares
+    c.execute("SELECT total_shares FROM properties WHERE property_id=?", (req.property_id,))
+    row = c.fetchone()
+    total_shares = row["total_shares"] if row else 0
+    
+    import time
+    deadline = int(time.time()) + (req.voting_days * 86400)
+    
+    c.execute('''
+        INSERT INTO proposals (property_id, proposer_address, proposal_type, description, proposed_value, total_shares, status, voting_deadline)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+    ''', (req.property_id, req.proposer_address, req.proposal_type, req.description, req.proposed_value, total_shares, deadline))
+    proposal_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    
     return {
-        "proposal_id": 1,
+        "proposal_id": proposal_id,
         "property_id": req.property_id,
         "proposal_type": req.proposal_type,
         "description": req.description,
         "status": "ACTIVE",
         "voting_deadline_days": req.voting_days,
-        "message": "Sign transaction to create proposal",
+        "message": "Proposal created successfully",
     }
 
 
@@ -55,16 +74,20 @@ async def cast_vote(req: VoteRequest):
                 amt=0,
                 note=f"PropChain: Vote {vote_str} on Proposal {req.proposal_id}".encode()
             )
-            encoded = base64.b64encode(encoding.msgpack_encode(txn)).decode("utf-8")
+            encoded = encoding.msgpack_encode(txn)
             unsigned_txns.append(encoded)
         except Exception as e:
             logger.error(f"Failed to build txn: {e}")
+            error_msg = str(e)
+    else:
+        error_msg = "Algod client not initialized"
 
     return {
         "proposal_id": req.proposal_id,
         "vote": "YES" if req.vote_yes else "NO",
         "message": "Sign transaction to cast vote",
-        "unsigned_txns": unsigned_txns
+        "unsigned_txns": unsigned_txns,
+        "error": error_msg
     }
 
 
@@ -79,10 +102,53 @@ async def finalize_proposal(proposal_id: int):
     }
 
 
-@router.get("/proposals/{property_id}", response_model=list[ProposalResponse])
+class RecordVoteRequest(VoteRequest):
+    pass
+
+@router.post("/record_vote")
+async def record_vote(req: RecordVoteRequest):
+    """Internal use: record a successful vote."""
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get voter's shares for voting weight
+    c.execute("SELECT shares FROM holdings WHERE investor_address=? AND property_id=(SELECT property_id FROM proposals WHERE id=?)", (req.voter_address, req.proposal_id))
+    row = c.fetchone()
+    weight = row["shares"] if row else 0
+    
+    if req.vote_yes:
+        c.execute("UPDATE proposals SET yes_weight = yes_weight + ? WHERE id=?", (weight, req.proposal_id))
+    else:
+        c.execute("UPDATE proposals SET no_weight = no_weight + ? WHERE id=?", (weight, req.proposal_id))
+        
+    c.execute("INSERT INTO votes (proposal_id, voter_address, vote_yes) VALUES (?, ?, ?)", (req.proposal_id, req.voter_address, req.vote_yes))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+@router.get("/proposals/{property_id}")
 async def list_proposals(property_id: int):
     """List all proposals for a property."""
-    return []
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    if property_id == 0: # all properties
+        c.execute("SELECT * FROM proposals")
+    else:
+        c.execute("SELECT * FROM proposals WHERE property_id=?", (property_id,))
+    rows = c.fetchall()
+    
+    res = []
+    for r in rows:
+        d = dict(r)
+        d["proposal_id"] = d.pop("id", 0)
+        d["status_label"] = PROPOSAL_STATUS_LABELS.get(d.get("status", 0), "UNKNOWN")
+        res.append(d)
+        
+    conn.close()
+    return res
 
 
 @router.get("/proposal/{proposal_id}", response_model=ProposalResponse)
