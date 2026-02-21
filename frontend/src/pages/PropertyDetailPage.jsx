@@ -1,8 +1,8 @@
-import { useState, useContext } from 'react'
+import { useState, useContext, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { WalletContext } from '../App'
 import { signTransaction } from '../utils/wallet'
-import { useDemoStore } from '../utils/demoStore'
+import { api } from '../utils/api'
 import { formatINR } from '../utils/mockData'
 import { useToast } from '../components/Toast'
 import { SinglePropertyMap } from '../components/PropertyMap'
@@ -10,17 +10,32 @@ import { SinglePropertyMap } from '../components/PropertyMap'
 export default function PropertyDetailPage() {
     const { id } = useParams()
     const { walletAddress, connector } = useContext(WalletContext)
-    const { properties, buyShares } = useDemoStore()
     const toast = useToast()
 
-    const p = properties.find(prop => prop.id === Number(id))
-
+    const [p, setP] = useState(null)
+    const [loading, setLoading] = useState(true)
     const [qty, setQty] = useState(100)
     const [showModal, setShowModal] = useState(false)
     const [txnState, setTxnState] = useState('idle') // idle | signing | success
     const [selectedImg, setSelectedImg] = useState(0)
     const [txnHash, setTxnHash] = useState('')
 
+    useEffect(() => {
+        api.getProperty(id).then(data => {
+            // Map the id down to property_id or id
+            data.id = data.property_id
+            data.name = data.property_name
+            setP(data)
+            const availableShares = data.totalShares - data.sharesSold
+            setQty(Math.min(data.minInvestment, availableShares))
+            setLoading(false)
+        }).catch(err => {
+            console.error(err)
+            setLoading(false)
+        })
+    }, [id])
+
+    if (loading) return <div className="max-w-2xl mx-auto px-6 py-24 text-center">Loading property...</div>
     if (!p) {
         return (
             <div className="max-w-2xl mx-auto px-6 py-24 text-center animate-fade-in">
@@ -52,10 +67,12 @@ export default function PropertyDetailPage() {
                 })
             })
             const data = await res.json()
-            if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error("Could not generate transaction")
+            if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error(data.error || "Could not generate transaction")
 
             const base64ToUint8Array = (base64) => {
-                const binaryString = window.atob(base64)
+                const padding = '='.repeat((4 - base64.length % 4) % 4);
+                const base64Standard = (base64 + padding).replace(/\-/g, '+').replace(/_/g, '/');
+                const binaryString = window.atob(base64Standard)
                 const len = binaryString.length
                 const bytes = new Uint8Array(len)
                 for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i) }
@@ -69,8 +86,13 @@ export default function PropertyDetailPage() {
                 return window.btoa(binary)
             }
 
+            // MUST import algosdk to parse the transaction object from the uint8array 
+            // otherwise PeraWalletConnect doesn't know what to do with a raw array.
+            const algosdk = (await import('algosdk')).default;
+
             const txnArray = base64ToUint8Array(data.unsigned_txns[0])
-            const signedTxns = await signTransaction(connector, txnArray)
+            const decodedTxn = algosdk.decodeUnsignedTransaction(txnArray)
+            const signedTxns = await signTransaction(connector, decodedTxn)
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
             // submit to backend
@@ -84,7 +106,9 @@ export default function PropertyDetailPage() {
             const submitData = await submitRes.json()
             if (!submitData.success) throw new Error(submitData.error || "Submission failed")
 
-            buyShares(p.id, qty)
+            await api.recordBuy({ property_id: p.id, investor_address: walletAddress, quantity: qty })
+            setP(prev => ({ ...prev, sharesSold: prev.sharesSold + qty }))
+
             setTxnHash(submitData.txid)
             setTxnState('success')
             toast.success(`Successfully purchased ${qty} shares of ${p.name}!`, 'Transaction Confirmed')

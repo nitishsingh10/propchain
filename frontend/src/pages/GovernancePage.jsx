@@ -1,7 +1,7 @@
-import { useState, useContext } from 'react'
+import { useState, useContext, useEffect } from 'react'
 import { WalletContext } from '../App'
 import { signTransaction } from '../utils/wallet'
-import { useDemoStore } from '../utils/demoStore'
+import { api } from '../utils/api'
 import { TYPE_ICONS, formatINR } from '../utils/mockData'
 import { useToast } from '../components/Toast'
 
@@ -14,13 +14,28 @@ const STATUS_COLORS = {
 
 export default function GovernancePage() {
     const { walletAddress, connector } = useContext(WalletContext)
-    const { proposals, votedProposals, vote, createProposal, holdings } = useDemoStore()
     const toast = useToast()
+    const [proposals, setProposals] = useState([])
+    const [holdings, setHoldings] = useState([])
+    const [votedProposals, setVotedProposals] = useState({})
+
     const [showCreate, setShowCreate] = useState(false)
     const [votingId, setVotingId] = useState(null)
     const [newProposal, setNewProposal] = useState({
         propertyId: 1, type: 'SELL', description: '', proposedValue: '',
     })
+
+    useEffect(() => {
+        if (!walletAddress) return
+
+        Promise.all([
+            api.listProposals(0),
+            api.getPortfolio(walletAddress)
+        ]).then(([props, port]) => {
+            setProposals(props)
+            setHoldings(port.holdings || [])
+        }).catch(console.error)
+    }, [walletAddress])
 
     if (!walletAddress) {
         return (
@@ -53,7 +68,9 @@ export default function GovernancePage() {
             if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error("Could not generate transaction")
 
             const base64ToUint8Array = (base64) => {
-                const binaryString = window.atob(base64)
+                const padding = '='.repeat((4 - base64.length % 4) % 4);
+                const base64Standard = (base64 + padding).replace(/\-/g, '+').replace(/_/g, '/');
+                const binaryString = window.atob(base64Standard)
                 const len = binaryString.length
                 const bytes = new Uint8Array(len)
                 for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i) }
@@ -67,8 +84,11 @@ export default function GovernancePage() {
                 return window.btoa(binary)
             }
 
+            const algosdk = (await import('algosdk')).default;
+
             const txnArray = base64ToUint8Array(data.unsigned_txns[0])
-            const signedTxns = await signTransaction(connector, txnArray)
+            const decodedTxn = algosdk.decodeUnsignedTransaction(txnArray)
+            const signedTxns = await signTransaction(connector, decodedTxn)
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
             const submitRes = await fetch(`${API_BASE}/submit`, {
@@ -81,12 +101,15 @@ export default function GovernancePage() {
             const submitData = await submitRes.json()
             if (!submitData.success) throw new Error(submitData.error || "Submission failed")
 
-            const success = vote(proposalId, voteType)
-            if (success) {
-                toast.success(`Voted ${voteType} on proposal #${proposalId}`, 'Vote Cast')
-            } else {
-                toast.warning('You have already voted on this proposal', 'Already Voted')
-            }
+            await api.recordVote({ proposal_id: proposalId, voter_address: walletAddress, vote_yes: voteType === 'YES' })
+
+            setVotedProposals(prev => ({ ...prev, [proposalId]: voteType }))
+            setProposals(prev => prev.map(p =>
+                (p.proposal_id || p.id) === proposalId
+                    ? { ...p, yes_weight: voteType === 'YES' ? (p.yes_weight || 0) + totalShares : (p.yes_weight || 0), no_weight: voteType === 'NO' ? (p.no_weight || 0) + totalShares : (p.no_weight || 0) }
+                    : p
+            ))
+            toast.success(`Voted ${voteType} on proposal #${proposalId}`, 'Vote Cast')
         } catch (error) {
             console.error('Vote error:', error)
             toast.error(error.message || 'Vote failed')
@@ -95,19 +118,32 @@ export default function GovernancePage() {
         }
     }
 
-    const handleCreate = () => {
+    const typeLabels = { 0: 'SELL', 1: 'RENOVATE', 2: 'CHANGE_RENT' }
+
+    const handleCreate = async () => {
         if (!newProposal.description.trim()) {
             toast.error('Please enter a description', 'Missing Field')
             return
         }
-        createProposal({
-            ...newProposal,
-            propertyId: Number(newProposal.propertyId),
-            proposedValue: Number(newProposal.proposedValue) || 0,
-        })
-        setShowCreate(false)
-        setNewProposal({ propertyId: 1, type: 'SELL', description: '', proposedValue: '' })
-        toast.success('Your proposal has been submitted for voting', 'Proposal Created')
+        try {
+            const proposalTypeMap = { 'SELL': 0, 'RENOVATE': 1, 'CHANGE_RENT': 2 }
+            await api.createProposal({
+                property_id: Number(newProposal.propertyId),
+                proposer_address: walletAddress,
+                proposal_type: proposalTypeMap[newProposal.type] || 0,
+                description: newProposal.description,
+                proposed_value: Number(newProposal.proposedValue) || 0,
+                voting_days: 7
+            })
+            const props = await api.listProposals(0)
+            setProposals(props)
+
+            setShowCreate(false)
+            setNewProposal({ propertyId: 1, type: 'SELL', description: '', proposedValue: '' })
+            toast.success('Your proposal has been submitted for voting', 'Proposal Created')
+        } catch (e) {
+            toast.error(e.message || "Failed to create proposal")
+        }
     }
 
     return (
@@ -129,21 +165,25 @@ export default function GovernancePage() {
             {/* Proposals */}
             <div className="space-y-4 stagger-children">
                 {proposals.map(p => {
-                    const yesP = p.totalShares > 0 ? (p.yesWeight / p.totalShares * 100).toFixed(1) : '0.0'
-                    const noP = p.totalShares > 0 ? (p.noWeight / p.totalShares * 100).toFixed(1) : '0.0'
-                    const hasVoted = votedProposals[p.id]
-                    const isVoting = votingId === p.id
+                    const pId = p.proposal_id || p.id
+                    const totalVotes = (p.yes_weight || 0) + (p.no_weight || 0)
+                    const _t = Math.max(totalVotes, p.total_shares || p.totalShares || 1)
+                    const yesP = _t > 0 ? ((p.yes_weight || p.yesWeight || 0) / _t * 100).toFixed(1) : '0.0'
+                    const noP = _t > 0 ? ((p.no_weight || p.noWeight || 0) / _t * 100).toFixed(1) : '0.0'
+                    const hasVoted = votedProposals[pId]
+                    const isVoting = votingId === pId
+                    const typeLabel = typeof p.type === 'string' ? p.type : (typeLabels[p.proposal_type] || 'PROP')
 
                     return (
-                        <div key={p.id} className="glass-card p-6 hover:bg-white/[0.08] transition-all">
+                        <div key={pId} className="glass-card p-6 hover:bg-white/[0.08] transition-all">
                             <div className="flex items-start justify-between mb-4">
                                 <div className="flex items-center gap-3">
-                                    <span className="w-8 h-8 rounded-lg bg-primary-500/15 flex items-center justify-center text-xs font-bold text-primary-200">{p.type?.charAt(0) || 'P'}</span>
+                                    <span className="w-8 h-8 rounded-lg bg-primary-500/15 flex items-center justify-center text-xs font-bold text-primary-200">{typeLabel.charAt(0)}</span>
                                     <div>
                                         <h3 className="font-semibold">{p.description}</h3>
                                         <p className="text-sm text-white/40">
-                                            Property #{p.propertyId} • Deadline: {p.deadline}
-                                            {p.proposedValue > 0 && <> • Value: {formatINR(p.proposedValue)}</>}
+                                            Property #{p.property_id || p.propertyId} • Deadline: {new Date((p.voting_deadline || p.deadline || (Date.now() / 1000 + 86400)) * 1000).toLocaleDateString()}
+                                            {(p.proposed_value || p.proposedValue) > 0 && <> • Value: {formatINR(p.proposed_value || p.proposedValue)}</>}
                                         </p>
                                     </div>
                                 </div>
@@ -181,8 +221,8 @@ export default function GovernancePage() {
                                         </div>
                                     ) : (
                                         <>
-                                            <button onClick={() => handleVote(p.id, 'YES')} className="btn-primary flex-1 text-sm">Vote YES</button>
-                                            <button onClick={() => handleVote(p.id, 'NO')} className="btn-danger flex-1 text-sm">Vote NO</button>
+                                            <button onClick={() => handleVote(pId, 'YES')} className="btn-primary flex-1 text-sm">Vote YES</button>
+                                            <button onClick={() => handleVote(pId, 'NO')} className="btn-danger flex-1 text-sm">Vote NO</button>
                                         </>
                                     )}
                                 </div>

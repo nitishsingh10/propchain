@@ -18,20 +18,18 @@ export default function App() {
 
     return (
         <WalletContext.Provider value={{ walletAddress, setWalletAddress, connector, setConnector }}>
-            <DemoProvider>
-                <ToastProvider>
-                    <Layout>
-                        <Routes>
-                            <Route path="/" element={<LandingPage />} />
-                            <Route path="/marketplace" element={<MarketplacePage />} />
-                            <Route path="/property/:id" element={<PropertyDetailPage />} />
-                            <Route path="/list" element={<ListPropertyPage />} />
-                            <Route path="/portfolio" element={<PortfolioPage />} />
-                            <Route path="/governance" element={<GovernancePage />} />
-                        </Routes>
-                    </Layout>
-                </ToastProvider>
-            </DemoProvider>
+            <ToastProvider>
+                <Layout>
+                    <Routes>
+                        <Route path="/" element={<LandingPage />} />
+                        <Route path="/marketplace" element={<MarketplacePage />} />
+                        <Route path="/property/:id" element={<PropertyDetailPage />} />
+                        <Route path="/list" element={<ListPropertyPage />} />
+                        <Route path="/portfolio" element={<PortfolioPage />} />
+                        <Route path="/governance" element={<GovernancePage />} />
+                    </Routes>
+                </Layout>
+            </ToastProvider>
         </WalletContext.Provider>
     )
 }

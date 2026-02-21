@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useDemoStore } from '../utils/demoStore'
+import { api } from '../utils/api'
 import { STATUS_MAP, formatINR } from '../utils/mockData'
 import { MultiPropertyMap } from '../components/PropertyMap'
 
@@ -13,12 +13,23 @@ const SORT_OPTIONS = [
 ]
 
 export default function MarketplacePage() {
-    const { properties } = useDemoStore()
     const navigate = useNavigate()
+    const [properties, setProperties] = useState([])
+    const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState('all')
     const [search, setSearch] = useState('')
     const [sort, setSort] = useState('default')
     const [viewMode, setViewMode] = useState('grid') // grid | map
+
+    useEffect(() => {
+        api.listProperties().then(data => {
+            setProperties(data)
+            setLoading(false)
+        }).catch(err => {
+            console.error(err)
+            setLoading(false)
+        })
+    }, [])
 
     const filtered = useMemo(() => {
         let list = properties
@@ -37,13 +48,18 @@ export default function MarketplacePage() {
         }
 
         // Sort
-        if (sort === 'yield') list = [...list].sort((a, b) => b.yield - a.yield)
-        else if (sort === 'price-low') list = [...list].sort((a, b) => a.sharePrice - b.sharePrice)
-        else if (sort === 'price-high') list = [...list].sort((a, b) => b.sharePrice - a.sharePrice)
-        else if (sort === 'funding') list = [...list].sort((a, b) => (b.sharesSold / b.totalShares) - (a.sharesSold / a.totalShares))
+        if (sort === 'yield') list = [...list].sort((a, b) => (b.yield ?? b.yield_pct ?? 0) - (a.yield ?? a.yield_pct ?? 0))
+        else if (sort === 'price-low') list = [...list].sort((a, b) => (a.sharePrice ?? a.share_price ?? 0) - (b.sharePrice ?? b.share_price ?? 0))
+        else if (sort === 'price-high') list = [...list].sort((a, b) => (b.sharePrice ?? b.share_price ?? 0) - (a.sharePrice ?? a.share_price ?? 0))
+        else if (sort === 'funding') list = [...list].sort((a, b) => ((b.sharesSold ?? b.shares_sold ?? 0) / (b.totalShares ?? b.total_shares ?? 1)) - ((a.sharesSold ?? a.shares_sold ?? 0) / (a.totalShares ?? a.total_shares ?? 1)))
 
         return list
     }, [properties, filter, search, sort])
+
+    // I need to skip the messy middle edits and just replace the whole loading view if possible. Let's just add a loading check.
+    if (loading) {
+        return <div className="max-w-7xl mx-auto px-4 py-24 text-center">Loading properties...</div>
+    }
 
     return (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 animate-fade-in">
@@ -101,23 +117,24 @@ export default function MarketplacePage() {
                 <div className="animate-fade-in">
                     <MultiPropertyMap
                         properties={filtered}
-                        onPropertyClick={(p) => navigate(`/property/${p.id}`)}
+                        onPropertyClick={(p) => navigate(`/property/${p.property_id || p.id}`)}
                     />
                     <p className="text-xs text-white/30 mt-2 text-center">Click a marker for details • Scroll to zoom</p>
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children">
                     {filtered.map(p => {
-                        const fundingPct = (p.sharesSold / p.totalShares) * 100
+                        const fundingPct = p.total_shares > 0 ? (p.shares_sold / p.total_shares) * 100 : 0
+                        const propId = p.property_id || p.id
                         return (
-                            <Link key={p.id} to={`/property/${p.id}`}
+                            <Link key={propId} to={`/property/${propId}`}
                                 className="glass-card hover:bg-white/[0.08] transition-all duration-300 group overflow-hidden hover:shadow-xl hover:shadow-primary-500/5 hover:-translate-y-1">
                                 <div className="h-44 relative overflow-hidden">
                                     {p.images && p.images.length > 0 ? (
-                                        <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
+                                        <img src={p.images[0]} alt={p.property_name || p.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
                                     ) : (
                                         <div className="w-full h-full bg-gradient-to-br from-white/5 to-white/0 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform duration-500">
-                                            {p.image}
+                                            🏢
                                         </div>
                                     )}
                                     <div className="absolute inset-0 bg-gradient-to-t from-dark-950/70 via-transparent to-transparent" />
@@ -133,17 +150,17 @@ export default function MarketplacePage() {
                                     )}
                                 </div>
                                 <div className="p-5">
-                                    <h3 className="font-semibold text-lg leading-tight mb-1">{p.name}</h3>
+                                    <h3 className="font-semibold text-lg leading-tight mb-1">{p.property_name || p.name}</h3>
                                     <p className="text-sm text-white/35 mb-4">
-                                        {p.location.split(',').slice(0, 2).join(',')}
+                                        {p.location_hash ? p.location_hash.split(',').slice(0, 2).join(',') : ''}
                                     </p>
                                     <div className="grid grid-cols-3 gap-3 text-center">
                                         <div>
-                                            <div className="text-sm font-semibold text-primary-400">{formatINR(p.sharePrice)}</div>
+                                            <div className="text-sm font-semibold text-primary-400">{formatINR(p.share_price || p.sharePrice)}</div>
                                             <div className="text-xs text-white/40">Per Share</div>
                                         </div>
                                         <div>
-                                            <div className="text-sm font-semibold text-primary-200">{p.yield > 0 ? `${p.yield}%` : '—'}</div>
+                                            <div className="text-sm font-semibold text-primary-200">{p.yield_pct > 0 ? `${p.yield_pct}%` : '—'}</div>
                                             <div className="text-xs text-white/40">Est. Yield</div>
                                         </div>
                                         <div>
