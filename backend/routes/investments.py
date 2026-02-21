@@ -21,6 +21,31 @@ async def buy_shares(req: BuySharesRequest):
     total_cost = req.quantity * share_price
     insurance = int(total_cost * insurance_rate)
 
+    unsigned_txns = []
+    from main import app_state
+    import base64
+    from algosdk import transaction, encoding
+    from algosdk.logic import get_application_address
+
+    client = app_state.get("algod_client")
+    if client:
+        try:
+            sp = client.suggested_params()
+            app_id = app_state["app_ids"].get("fractional_token", 0)
+            receiver = get_application_address(app_id) if app_id else req.investor_address
+            # Create a real payment transaction to show on testnet explorer
+            txn = transaction.PaymentTxn(
+                sender=req.investor_address,
+                sp=sp,
+                receiver=receiver,
+                amt=total_cost + insurance,
+                note=f"PropChain: Buy {req.quantity} shares of Prop {req.property_id}".encode()
+            )
+            encoded = base64.b64encode(encoding.msgpack_encode(txn)).decode("utf-8")
+            unsigned_txns.append(encoded)
+        except Exception as e:
+            logger.error(f"Failed to build txn: {e}")
+
     return {
         "property_id": req.property_id,
         "quantity": req.quantity,
@@ -29,6 +54,7 @@ async def buy_shares(req: BuySharesRequest):
         "insurance_premium": insurance,
         "total_payment": total_cost + insurance,
         "message": "Sign transaction with Pera Wallet to complete purchase",
+        "unsigned_txns": unsigned_txns
     }
 
 

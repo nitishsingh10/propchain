@@ -1,12 +1,13 @@
 import { useState, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { WalletContext } from '../App'
+import { signTransaction } from '../utils/wallet'
 import { useDemoStore } from '../utils/demoStore'
 import { formatINR, formatValuation, STATUS_MAP } from '../utils/mockData'
 import { useToast } from '../components/Toast'
 
 export default function PortfolioPage() {
-    const { walletAddress } = useContext(WalletContext)
+    const { walletAddress, connector } = useContext(WalletContext)
     const { holdings, claimRent, getListedProperties } = useDemoStore()
     const toast = useToast()
     const [claimingId, setClaimingId] = useState(null)
@@ -33,10 +34,55 @@ export default function PortfolioPage() {
 
     const handleClaim = async (propertyId, name) => {
         setClaimingId(propertyId)
-        await new Promise(r => setTimeout(r, 1500))
-        claimRent(propertyId)
-        setClaimingId(null)
-        toast.success(`Rent claimed from ${name}`, 'Rent Received')
+        try {
+            const res = await fetch('http://localhost:8000/rent/claim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    property_id: propertyId,
+                    investor_address: walletAddress
+                })
+            })
+            const data = await res.json()
+            if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error("Could not generate transaction")
+
+            const base64ToUint8Array = (base64) => {
+                const binaryString = window.atob(base64)
+                const len = binaryString.length
+                const bytes = new Uint8Array(len)
+                for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i) }
+                return bytes
+            }
+
+            const uint8ArrayToBase64 = (bytes) => {
+                let binary = ''
+                const len = bytes.byteLength
+                for (let i = 0; i < len; i++) { binary += String.fromCharCode(bytes[i]) }
+                return window.btoa(binary)
+            }
+
+            const txnArray = base64ToUint8Array(data.unsigned_txns[0])
+            const signedTxns = await signTransaction(connector, txnArray)
+            if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
+
+            const submitRes = await fetch('http://localhost:8000/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    signed_txn: uint8ArrayToBase64(signedTxns[0])
+                })
+            })
+            const submitData = await submitRes.json()
+            if (!submitData.success) throw new Error(submitData.error || "Submission failed")
+
+            claimRent(propertyId)
+            toast.success(`Rent claimed from ${name}`, 'Rent Received')
+        } catch (error) {
+            console.error('Claim error:', error)
+            toast.error(error.message || 'Claim failed')
+        } finally {
+            setClaimingId(null)
+        }
     }
 
     return (

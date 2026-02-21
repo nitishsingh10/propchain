@@ -34,10 +34,37 @@ async def create_proposal(req: ProposalCreateRequest):
 async def cast_vote(req: VoteRequest):
     """Cast a vote on a governance proposal."""
     logger.info(f"Vote on proposal {req.proposal_id}: {'YES' if req.vote_yes else 'NO'}")
+    
+    unsigned_txns = []
+    from main import app_state
+    import base64
+    from algosdk import transaction, encoding
+    from algosdk.logic import get_application_address
+
+    client = app_state.get("algod_client")
+    if client:
+        try:
+            sp = client.suggested_params()
+            vote_str = "YES" if req.vote_yes else "NO"
+            app_id = app_state["app_ids"].get("governance", 0)
+            # Create a 0 ALGO payment to self with note, to show up on explorer
+            txn = transaction.PaymentTxn(
+                sender=req.voter_address,
+                sp=sp,
+                receiver=req.voter_address,
+                amt=0,
+                note=f"PropChain: Vote {vote_str} on Proposal {req.proposal_id}".encode()
+            )
+            encoded = base64.b64encode(encoding.msgpack_encode(txn)).decode("utf-8")
+            unsigned_txns.append(encoded)
+        except Exception as e:
+            logger.error(f"Failed to build txn: {e}")
+
     return {
         "proposal_id": req.proposal_id,
         "vote": "YES" if req.vote_yes else "NO",
         "message": "Sign transaction to cast vote",
+        "unsigned_txns": unsigned_txns
     }
 
 

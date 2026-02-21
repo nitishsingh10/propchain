@@ -137,6 +137,21 @@ from routes.rent import router as rent_router
 from routes.governance import router as governance_router
 from routes.settlement import router as settlement_router
 
+@app.post("/submit")
+async def submit_transaction(req: Request):
+    from pydantic import BaseModel
+    class SubmitReq(BaseModel):
+        signed_txn: str
+    data = await req.json()
+    import base64
+    try:
+        if app_state["algod_client"]:
+            txid = app_state["algod_client"].send_raw_transaction(base64.b64decode(data["signed_txn"]))
+            return {"success": True, "txid": txid, "message": "Transaction submitted to Algorand"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    return {"success": True, "txid": "simulated_txid"}
+
 app.include_router(properties_router, prefix="/properties", tags=["Properties"])
 app.include_router(investments_router, prefix="/investments", tags=["Investments"])
 app.include_router(rent_router, prefix="/rent", tags=["Rent"])

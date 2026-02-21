@@ -1,6 +1,7 @@
 import { useState, useContext } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { WalletContext } from '../App'
+import { signTransaction } from '../utils/wallet'
 import { useDemoStore } from '../utils/demoStore'
 import { formatINR } from '../utils/mockData'
 import { useToast } from '../components/Toast'
@@ -8,7 +9,7 @@ import { SinglePropertyMap } from '../components/PropertyMap'
 
 export default function PropertyDetailPage() {
     const { id } = useParams()
-    const { walletAddress } = useContext(WalletContext)
+    const { walletAddress, connector } = useContext(WalletContext)
     const { properties, buyShares } = useDemoStore()
     const toast = useToast()
 
@@ -18,7 +19,7 @@ export default function PropertyDetailPage() {
     const [showModal, setShowModal] = useState(false)
     const [txnState, setTxnState] = useState('idle') // idle | signing | success
     const [selectedImg, setSelectedImg] = useState(0)
-    const [txnHash] = useState(() => '0x' + Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join(''))
+    const [txnHash, setTxnHash] = useState('')
 
     if (!p) {
         return (
@@ -40,10 +41,50 @@ export default function PropertyDetailPage() {
     const handleBuy = async () => {
         setTxnState('signing')
         try {
-            // Simulate transaction processing
-            await new Promise(r => setTimeout(r, 2000))
+            const res = await fetch('http://localhost:8000/investments/buy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    property_id: p.id,
+                    investor_address: walletAddress,
+                    quantity: qty
+                })
+            })
+            const data = await res.json()
+            if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error("Could not generate transaction")
+
+            const base64ToUint8Array = (base64) => {
+                const binaryString = window.atob(base64)
+                const len = binaryString.length
+                const bytes = new Uint8Array(len)
+                for (let i = 0; i < len; i++) { bytes[i] = binaryString.charCodeAt(i) }
+                return bytes
+            }
+
+            const uint8ArrayToBase64 = (bytes) => {
+                let binary = ''
+                const len = bytes.byteLength
+                for (let i = 0; i < len; i++) { binary += String.fromCharCode(bytes[i]) }
+                return window.btoa(binary)
+            }
+
+            const txnArray = base64ToUint8Array(data.unsigned_txns[0])
+            const signedTxns = await signTransaction(connector, txnArray)
+            if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
+
+            // submit to backend
+            const submitRes = await fetch('http://localhost:8000/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    signed_txn: uint8ArrayToBase64(signedTxns[0])
+                })
+            })
+            const submitData = await submitRes.json()
+            if (!submitData.success) throw new Error(submitData.error || "Submission failed")
 
             buyShares(p.id, qty)
+            setTxnHash(submitData.txid)
             setTxnState('success')
             toast.success(`Successfully purchased ${qty} shares of ${p.name}!`, 'Transaction Confirmed')
         } catch (error) {
