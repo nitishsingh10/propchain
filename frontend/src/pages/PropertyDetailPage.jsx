@@ -41,7 +41,8 @@ export default function PropertyDetailPage() {
     const handleBuy = async () => {
         setTxnState('signing')
         try {
-            const res = await fetch('http://localhost:8000/investments/buy', {
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+            const res = await fetch(`${API_BASE}/investments/buy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -73,7 +74,7 @@ export default function PropertyDetailPage() {
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
             // submit to backend
-            const submitRes = await fetch('http://localhost:8000/submit', {
+            const submitRes = await fetch(`${API_BASE}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

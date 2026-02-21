@@ -39,7 +39,8 @@ export default function GovernancePage() {
     const handleVote = async (proposalId, voteType) => {
         setVotingId(proposalId)
         try {
-            const res = await fetch('http://localhost:8000/governance/vote', {
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+            const res = await fetch(`${API_BASE}/governance/vote`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -70,7 +71,7 @@ export default function GovernancePage() {
             const signedTxns = await signTransaction(connector, txnArray)
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
-            const submitRes = await fetch('http://localhost:8000/submit', {
+            const submitRes = await fetch(`${API_BASE}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

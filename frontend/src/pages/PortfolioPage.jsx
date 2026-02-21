@@ -35,7 +35,8 @@ export default function PortfolioPage() {
     const handleClaim = async (propertyId, name) => {
         setClaimingId(propertyId)
         try {
-            const res = await fetch('http://localhost:8000/rent/claim', {
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+            const res = await fetch(`${API_BASE}/rent/claim`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -65,7 +66,7 @@ export default function PortfolioPage() {
             const signedTxns = await signTransaction(connector, txnArray)
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
-            const submitRes = await fetch('http://localhost:8000/submit', {
+            const submitRes = await fetch(`${API_BASE}/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
