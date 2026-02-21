@@ -54,17 +54,11 @@ export default function GovernancePage() {
     const handleVote = async (proposalId, voteType) => {
         setVotingId(proposalId)
         try {
-            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-            const res = await fetch(`${API_BASE}/governance/vote`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    proposal_id: proposalId,
-                    voter_address: walletAddress,
-                    vote_yes: voteType === 'YES'
-                })
+            const data = await api.castVote({
+                proposal_id: proposalId,
+                voter_address: walletAddress,
+                vote_yes: voteType === 'YES'
             })
-            const data = await res.json()
             if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error("Could not generate transaction")
 
             const base64ToUint8Array = (base64) => {
@@ -91,14 +85,7 @@ export default function GovernancePage() {
             const signedTxns = await signTransaction(connector, decodedTxn)
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
-            const submitRes = await fetch(`${API_BASE}/submit`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    signed_txn: uint8ArrayToBase64(signedTxns[0])
-                })
-            })
-            const submitData = await submitRes.json()
+            const submitData = await api.submitTransaction(uint8ArrayToBase64(signedTxns[0]))
             if (!submitData.success) throw new Error(submitData.error || "Submission failed")
 
             await api.recordVote({ proposal_id: proposalId, voter_address: walletAddress, vote_yes: voteType === 'YES' })

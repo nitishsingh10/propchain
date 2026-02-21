@@ -54,4 +54,7 @@ export const api = {
     // Settlement
     initiateSettlement: (data) => request('/settlement/initiate', { method: 'POST', body: JSON.stringify(data) }),
     settlementStatus: (pid) => request(`/settlement/status/${pid}`),
+
+    // Common
+    submitTransaction: (signed_txn) => request('/submit', { method: 'POST', body: JSON.stringify({ signed_txn }) }),
 }

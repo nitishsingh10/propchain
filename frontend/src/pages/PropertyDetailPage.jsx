@@ -56,17 +56,11 @@ export default function PropertyDetailPage() {
     const handleBuy = async () => {
         setTxnState('signing')
         try {
-            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-            const res = await fetch(`${API_BASE}/investments/buy`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    property_id: p.id,
-                    investor_address: walletAddress,
-                    quantity: qty
-                })
+            const data = await api.buyShares({
+                property_id: p.id,
+                investor_address: walletAddress,
+                quantity: qty
             })
-            const data = await res.json()
             if (!data.unsigned_txns || data.unsigned_txns.length === 0) throw new Error(data.error || "Could not generate transaction")
 
             const base64ToUint8Array = (base64) => {
@@ -96,14 +90,7 @@ export default function PropertyDetailPage() {
             if (!signedTxns) throw new Error("Transaction signing failed or was canceled")
 
             // submit to backend
-            const submitRes = await fetch(`${API_BASE}/submit`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    signed_txn: uint8ArrayToBase64(signedTxns[0])
-                })
-            })
-            const submitData = await submitRes.json()
+            const submitData = await api.submitTransaction(uint8ArrayToBase64(signedTxns[0]))
             if (!submitData.success) throw new Error(submitData.error || "Submission failed")
 
             await api.recordBuy({ property_id: p.id, investor_address: walletAddress, quantity: qty })
