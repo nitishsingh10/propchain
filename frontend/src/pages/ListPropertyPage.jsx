@@ -24,7 +24,11 @@ export default function ListPropertyPage() {
         maxInvestment: '',
     })
 
-    const [files, setFiles] = useState([])
+    const [files, setFiles] = useState({
+        aadhaar: null,
+        saleDeed: null,
+        taxReceipt: null
+    })
     const [mapLatLng, setMapLatLng] = useState(null)
 
     const calculateSharePrice = () => {
@@ -37,9 +41,9 @@ export default function ListPropertyPage() {
         setFormData(prev => ({ ...prev, [name]: value }))
     }
 
-    const handleFileChange = (e) => {
+    const handleFileChange = (type) => (e) => {
         if (e.target.files && e.target.files.length > 0) {
-            setFiles(Array.from(e.target.files))
+            setFiles(prev => ({ ...prev, [type]: e.target.files[0] }))
         }
     }
 
@@ -79,14 +83,15 @@ export default function ListPropertyPage() {
     }
 
     const handleUploadDocuments = async () => {
-        if (files.length === 0) {
-            toast.error('Please select at least one document')
+        const uploadList = Object.values(files).filter(Boolean)
+        if (uploadList.length < 3) {
+            toast.error('Please upload all required documents: Aadhaar, Sale Deed, and Tax Receipt')
             return
         }
 
         setIsLoading(true)
         try {
-            await api.verifyProperty(propertyId, files)
+            await api.verifyProperty(propertyId, uploadList)
 
             setStep(3)
             toast.success('Documents uploaded and verification started')
@@ -284,43 +289,66 @@ export default function ListPropertyPage() {
                                 </p>
                             </div>
 
-                            <div className="border-2 border-dashed border-white/10 hover:border-primary-500/50 rounded-2xl p-10 transition-colors text-center group">
-                                <input
-                                    type="file"
-                                    id="file-upload"
-                                    className="hidden"
-                                    multiple
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    onChange={handleFileChange}
-                                />
-                                <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center gap-4">
-                                    <div className="w-16 h-16 rounded-full bg-white/[0.03] group-hover:bg-primary-500/10 flex items-center justify-center transition-colors">
-                                        <Upload className="text-white/40 group-hover:text-primary-400" size={32} />
-                                    </div>
-                                    <div>
-                                        <span className="text-primary-400 font-medium">Click to upload</span>
-                                        <span className="text-white/40"> or drag and drop</span>
-                                    </div>
-                                    <p className="text-xs text-white/30">PDF, PNG, JPG up to 10MB</p>
-                                </label>
-                            </div>
-
-                            {files.length > 0 && (
-                                <div className="space-y-2">
-                                    <p className="text-xs text-white/40 uppercase font-medium">Selected Files</p>
-                                    {files.map((file, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/[0.05]">
-                                            <span className="text-sm text-white/80">{file.name}</span>
-                                            <span className="text-xs text-white/40">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Aadhaar */}
+                                <div className={`border-2 border-dashed ${files.aadhaar ? 'border-primary-500/50 bg-primary-500/5' : 'border-white/10 hover:border-primary-500/50'} rounded-2xl p-6 transition-colors text-center group`}>
+                                    <input type="file" id="upload-aadhaar" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange('aadhaar')} />
+                                    <label htmlFor="upload-aadhaar" className="cursor-pointer flex flex-col items-center gap-3">
+                                        <div className={`w-12 h-12 rounded-full ${files.aadhaar ? 'bg-primary-500/20 text-primary-400' : 'bg-white/[0.03] text-white/40 group-hover:bg-primary-500/10 group-hover:text-primary-400'} flex items-center justify-center transition-colors`}>
+                                            <Upload size={24} />
                                         </div>
-                                    ))}
+                                        <div>
+                                            <span className={`font-medium block ${files.aadhaar ? 'text-primary-400' : 'text-white/80'}`}>Aadhaar Card</span>
+                                            {files.aadhaar ? (
+                                                <span className="text-xs text-primary-300 mt-1 block truncate max-w-[150px]">{files.aadhaar.name}</span>
+                                            ) : (
+                                                <span className="text-xs text-white/40 mt-1 block">Click to upload</span>
+                                            )}
+                                        </div>
+                                    </label>
                                 </div>
-                            )}
+
+                                {/* Sale Deed */}
+                                <div className={`border-2 border-dashed ${files.saleDeed ? 'border-primary-500/50 bg-primary-500/5' : 'border-white/10 hover:border-primary-500/50'} rounded-2xl p-6 transition-colors text-center group`}>
+                                    <input type="file" id="upload-saledeed" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange('saleDeed')} />
+                                    <label htmlFor="upload-saledeed" className="cursor-pointer flex flex-col items-center gap-3">
+                                        <div className={`w-12 h-12 rounded-full ${files.saleDeed ? 'bg-primary-500/20 text-primary-400' : 'bg-white/[0.03] text-white/40 group-hover:bg-primary-500/10 group-hover:text-primary-400'} flex items-center justify-center transition-colors`}>
+                                            <Upload size={24} />
+                                        </div>
+                                        <div>
+                                            <span className={`font-medium block ${files.saleDeed ? 'text-primary-400' : 'text-white/80'}`}>Sale/Title Deed</span>
+                                            {files.saleDeed ? (
+                                                <span className="text-xs text-primary-300 mt-1 block truncate max-w-[150px]">{files.saleDeed.name}</span>
+                                            ) : (
+                                                <span className="text-xs text-white/40 mt-1 block">Click to upload</span>
+                                            )}
+                                        </div>
+                                    </label>
+                                </div>
+
+                                {/* Tax Receipt */}
+                                <div className={`border-2 border-dashed ${files.taxReceipt ? 'border-primary-500/50 bg-primary-500/5' : 'border-white/10 hover:border-primary-500/50'} rounded-2xl p-6 transition-colors text-center group`}>
+                                    <input type="file" id="upload-tax" className="hidden" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileChange('taxReceipt')} />
+                                    <label htmlFor="upload-tax" className="cursor-pointer flex flex-col items-center gap-3">
+                                        <div className={`w-12 h-12 rounded-full ${files.taxReceipt ? 'bg-primary-500/20 text-primary-400' : 'bg-white/[0.03] text-white/40 group-hover:bg-primary-500/10 group-hover:text-primary-400'} flex items-center justify-center transition-colors`}>
+                                            <Upload size={24} />
+                                        </div>
+                                        <div>
+                                            <span className={`font-medium block ${files.taxReceipt ? 'text-primary-400' : 'text-white/80'}`}>Property Tax Receipt</span>
+                                            {files.taxReceipt ? (
+                                                <span className="text-xs text-primary-300 mt-1 block truncate max-w-[150px]">{files.taxReceipt.name}</span>
+                                            ) : (
+                                                <span className="text-xs text-white/40 mt-1 block">Click to upload</span>
+                                            )}
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
 
                             <button
                                 onClick={handleUploadDocuments}
-                                disabled={isLoading || files.length === 0}
-                                className="w-full btn-primary py-4 text-base flex items-center justify-center gap-2"
+                                disabled={isLoading || Object.values(files).filter(Boolean).length < 3}
+                                className="w-full btn-primary py-4 text-base flex items-center justify-center gap-2 mt-8"
                             >
                                 {isLoading ? <Loader2 className="animate-spin" /> : 'Start Verification'}
                             </button>
